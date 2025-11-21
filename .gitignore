@@ -1,0 +1,15 @@
+# Entorno virtual
+.venv/
+
+# Python cache
+__pycache__/
+*.pyc
+
+# macOS
+.DS_Store
+
+# Config local de Streamlit
+.streamlit/
+
+# Datos generados por la app (cuando lo usemos)
+data/combinaciones_generadas.csv
