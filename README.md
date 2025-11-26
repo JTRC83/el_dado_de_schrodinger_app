@@ -132,4 +132,5 @@ De momento, uso personal / experimental.
 
 🤝 Contribuciones
 
-El proyecto está pensado inicialmente como herramienta personal, pero cualquier idea o sugerencia (issues, PRs o notas en el README) es bienvenida.
+El proyecto está pensado inicialmente como herramienta personal, pero cualquier idea o sugerencia
+ (issues, PRs o notas en el README) es bienvenida.

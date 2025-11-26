@@ -9,7 +9,9 @@ NEOBRUTALIST_CSS = """
   --accent-2: #5de4c7;  /* verde menta */
   --accent-3: #ff6b6b;  /* rojo coral */
   --accent-4: #4d7fff;  /* azul intenso */
-  --card-radius: 14px;
+  --accent-5: #ffb347;  /* naranja suave para combinaciones */
+  --accent-6: #9cf594;  /* verde suave para sumas */
+  --card-radius: 24px;
   --card-border: 3px solid #111111;
 }
 
@@ -36,10 +38,19 @@ body {
 .neocard--accent2 { background-color: var(--accent-2); }
 .neocard--accent3 { background-color: var(--accent-3); }
 .neocard--accent4 { background-color: var(--accent-4); }
+.neocard--accent5 { background-color: var(--accent-5); }
+.neocard--accent6 { background-color: var(--accent-6); }
+
+.neocard-title {
+  font-size: 1.1rem;
+  font-weight: 800;
+  margin: 0;
+  text-align: left;
+}
 
 /* Títulos */
 h1, h2, h3 {
-  font-weight: 800 !important;
+  font-weight: 900 !important;
   letter-spacing: 0.03em;
 }
 
@@ -47,6 +58,12 @@ h1, h2, h3 {
 [data-testid="stSidebar"] {
   border-right: 3px solid #111111;
   background-color: #f4f4f4;
+}
+
+[data-testid="stSidebar"] img {
+  max-width: 180px;
+  margin-top: 1rem;
+  margin-bottom: 1rem;
 }
 
 /* Botones */
