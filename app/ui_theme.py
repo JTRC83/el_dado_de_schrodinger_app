@@ -66,12 +66,40 @@ h1, h2, h3 {
   margin-bottom: 1rem;
 }
 
-/* Botones */
+/* Botones generales (contenido principal) */
 .stButton>button {
   border-radius: 999px;
   border: 3px solid #111111;
   box-shadow: 4px 4px 0 #111111;
   font-weight: 700;
+  background-color: #ffffff;
+  color: #111111;
+}
+
+/* Botón de la SIDEBAR (Actualizar API) estilo "botón rojo" */
+[data-testid="stSidebar"] .stButton > button {
+  border-radius: 999px;
+  padding: 0.8rem 1.8rem;
+  border: 4px solid #111111;
+  background: radial-gradient(circle at 30% 30%, #ff8080, #ff1f1f);
+  color: #ffffff;
+  font-weight: 800;
+  font-size: 0.95rem;
+  box-shadow: 6px 6px 0 #111111;
+  transition: transform 0.05s ease-out,
+              box-shadow 0.05s ease-out,
+              filter 0.1s ease-out;
+}
+
+[data-testid="stSidebar"] .stButton > button:hover {
+  filter: brightness(1.05);
+  transform: translateY(1px);
+  box-shadow: 4px 4px 0 #111111;
+}
+
+[data-testid="stSidebar"] .stButton > button:active {
+  transform: translateY(3px);
+  box-shadow: 2px 2px 0 #111111;
 }
 </style>
 """

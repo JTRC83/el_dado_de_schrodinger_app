@@ -1,5 +1,6 @@
 # app/metrics.py
 import pandas as pd
+import numpy as np
 
 def compute_main_number_freq(df: pd.DataFrame) -> pd.Series:
     nums = pd.concat([df[f"n{i}"] for i in range(1, 6)], axis=0)
@@ -54,32 +55,62 @@ def compute_hot_cold_summary(df: pd.DataFrame, window: int = 50) -> dict:
         "cold_gap": cold_gap,
     }
 
-def compute_hot_cold_stars(df: pd.DataFrame, window: int = 50) -> dict:
+def compute_hot_cold_stars(df: pd.DataFrame, window: int = 50):
+    """
+    Devuelve la estrella más caliente y la más atrasada.
+
+    hot_star: más frecuente en los últimos N sorteos (ventana limitada por len(df)).
+    cold_star: estrella con mayor número de sorteos desde su última aparición
+               (sobre todo el rango disponible).
+    """
     if df.empty:
-        return {}
+        return None
 
-    window_df = df.tail(window)
-    star_freq_window = compute_star_freq(window_df)
-    hot_star = int(star_freq_window.idxmax())
-    hot_star_freq = int(star_freq_window.max())
+    df_sorted = df.sort_values("date")
 
-    last_seen = {s: -1 for s in range(1, 13)}
-    df_idx = df.reset_index(drop=True)
+    # Ventana efectiva
+    n_draws = len(df_sorted)
+    win = min(window, n_draws)
 
-    for idx, row in df_idx.iterrows():
-        for col in ["s1", "s2"]:
-            star = int(row[col])
-            last_seen[star] = idx
+    # --- calientes (frecuencia en últimos N sorteos) ---
+    recent = df_sorted.tail(win)
 
-    total = len(df_idx)
-    backlog = {
-        s: (total - 1 - idx if idx >= 0 else total)
-        for s, idx in last_seen.items()
-    }
-    backlog_series = pd.Series(backlog).sort_values(ascending=False)
+    stars_recent = recent[["s1", "s2"]].apply(pd.to_numeric, errors="coerce")
+    flat_recent = stars_recent.to_numpy().ravel()
+    flat_recent = [int(x) for x in flat_recent if not pd.isna(x)]
 
-    cold_star = int(backlog_series.idxmax())
-    cold_gap = int(backlog_series.max())
+    if not flat_recent:
+        return None
+
+    counts = (
+        pd.Series(flat_recent)
+        .value_counts()
+        .sort_values(ascending=False)
+    )
+
+    hot_star = int(counts.index[0])
+    hot_star_freq = int(counts.iloc[0])
+
+    # --- frías (gap desde última aparición en todo el rango) ---
+    stars_all = df_sorted[["s1", "s2"]].apply(pd.to_numeric, errors="coerce")
+    arr_all = stars_all.to_numpy()
+
+    last_seen = {s: None for s in range(1, 13)}  # estrellas 1..12
+    for idx, row in enumerate(arr_all):
+        for val in row:
+            if not pd.isna(val):
+                v = int(val)
+                last_seen[v] = idx
+
+    gaps = {}
+    for s in range(1, 13):
+        if last_seen[s] is None:
+            gaps[s] = n_draws
+        else:
+            gaps[s] = (n_draws - 1) - last_seen[s]
+
+    cold_star = max(gaps, key=gaps.get)
+    cold_gap = int(gaps[cold_star])
 
     return {
         "hot_star": hot_star,

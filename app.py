@@ -5,6 +5,7 @@ import streamlit as st
 import pandas as pd
 import altair as alt
 import numpy as np
+import time
 
 from app.data_loader import load_raw_data
 from app.ui_theme import inject_neobrutalist_theme
@@ -15,12 +16,18 @@ from app.metrics import (
     compute_hot_cold_summary,
     compute_hot_cold_stars,
 )
+
 from app.updater import update_historico_from_api
+from app.generator import generate_block
+from app.combinations_store import save_block
 
 
 st.set_page_config(page_title="El dado de Schrödinger", layout="wide")
 inject_neobrutalist_theme()
 
+if "last_block" not in st.session_state:
+    st.session_state["last_block"] = None
+    st.session_state["last_block_meta"] = {}
 
 @st.cache_data
 def get_data() -> pd.DataFrame:
@@ -28,24 +35,38 @@ def get_data() -> pd.DataFrame:
 
 
 # --- SIDEBAR ---
-CAT_IMAGE_PATH = "assets/gato_dado.png"  # imagen gato
+CAT_IMAGE_PATH = "assets/gato_dado.png"
 st.sidebar.image(CAT_IMAGE_PATH, use_container_width=True)
 
 st.sidebar.title("El dado de Schrödinger")
 st.sidebar.caption("Panel Euromillones")
 
+cooldown_seconds = 60  # por ejemplo, 1 minuto
 
+last_update = st.session_state.get("last_update_attempt")
 
-if st.sidebar.button("🔄 Actualizar histórico desde la API"):
+if last_update is not None:
+    elapsed = time.time() - last_update
+else:
+    elapsed = cooldown_seconds + 1  # para permitir la primera vez
+
+if st.sidebar.button("♻️  Actualizar histórico (API)"):
     try:
         added = update_historico_from_api()
         get_data.clear()
         if added == 0:
-            st.sidebar.success("Histórico ya estaba actualizado.")
+            st.sidebar.info("Histórico ya estaba actualizado.")
         else:
             st.sidebar.success(f"Actualizado: {added} sorteos nuevos.")
     except Exception as e:
-        st.sidebar.error(f"Error al actualizar: {e}")
+        msg = str(e)
+        if "429" in msg:
+            st.sidebar.warning(
+                "La API externa ha devuelto 429 (Too Many Requests).\n\n"
+                "Espera unos minutos antes de volver a actualizar."
+            )
+        else:
+            st.sidebar.error(f"Error al actualizar: {e}")
 
 df = get_data()
 
@@ -164,7 +185,7 @@ with tab_hist:
                     color=alt.Color("color:N", scale=None, legend=None),
                     tooltip=["numero", "frecuencia"],
                 )
-                .properties(height=300)
+                .properties(height=380)
             )
             st.altair_chart(chart, use_container_width=True)
 
@@ -251,8 +272,11 @@ with tab_hist:
                         color=alt.Color("color:N", scale=None, legend=None),
                         tooltip=["estrella", "frecuencia"],
                     )
-                    .properties(height=250)
+                    .properties(
+                        height=450
+                    )
                 )
+
                 st.altair_chart(chart_stars, use_container_width=True)
 
                 st.markdown(
@@ -643,13 +667,13 @@ with tab_hist:
 
 
 # -------------------------------------------------------------------
-# 🎲 TAB: GENERADOR A/B/C (v0)
+# 🎲 TAB: GENERADOR A/B/C
 # -------------------------------------------------------------------
 with tab_gen:
     # Barra título Generador
     st.markdown(
         '<div class="neocard neocard--accent2">'
-        '<p class="neocard-title">Generador de combinaciones A/B/C (v0)</p>'
+        '<p class="neocard-title">Generador de combinaciones A/B/C</p>'
         "</div>",
         unsafe_allow_html=True,
     )
@@ -688,28 +712,48 @@ with tab_gen:
     lines_C = int(total_lines - lines_A - lines_B)
 
     st.write(f"**Líneas Serie C (automático):** {lines_C}")
-
     st.caption(
-        "Más adelante aquí meteremos todos los pesos, bandas de suma y reglas avanzadas."
+        "Estándar aplica anti-clon con todo el histórico y usa rangos de suma A/B/C. "
+        "Momentum / Rareza / Experimental usarán pesos distintos sobre el histórico reciente."
     )
 
-    def generar_linea_simple():
-        nums = sorted(random.sample(range(1, 51), 5))
-        stars = sorted(random.sample(range(1, 13), 2))
-        return nums, stars
-
+    # 1) Generar bloque y guardarlo en memoria
     if st.button("🎲 Generar bloque de combinaciones"):
-        block = []
-        for serie, n_lines in [("A", lines_A), ("B", lines_B), ("C", lines_C)]:
-            for _ in range(n_lines):
-                nums, stars = generar_linea_simple()
-                block.append({"serie": serie, "nums": nums, "stars": stars})
+        block = generate_block(
+            mode=mode,
+            df_hist=df,
+            lines_A=lines_A,
+            lines_B=lines_B,
+            lines_C=lines_C,
+        )
+        st.session_state["last_block"] = block
+        st.session_state["last_block_meta"] = {
+            "mode": mode,
+            "total_lines": total_lines,
+            "lines_A": lines_A,
+            "lines_B": lines_B,
+            "lines_C": lines_C,
+        }
 
+    # 2) Recuperar el último bloque generado (si existe)
+    block = st.session_state.get("last_block")
+    meta = st.session_state.get("last_block_meta", {})
+
+    if block:
+        st.markdown("### Último bloque generado")
+        st.markdown(
+            f"_Modo_: **{meta.get('mode', '—')}** · "
+            f"A: **{meta.get('lines_A', 0)}** · "
+            f"B: **{meta.get('lines_B', 0)}** · "
+            f"C: **{meta.get('lines_C', 0)}**"
+        )
+
+        # Mostrar líneas agrupadas por serie
         for serie in ["A", "B", "C"]:
             subset = [row for row in block if row["serie"] == serie]
             if not subset:
                 continue
-            st.markdown(f"### Serie {serie}")
+            st.markdown(f"#### Serie {serie}")
             for row in subset:
                 line_str = (
                     "Números: "
@@ -718,3 +762,17 @@ with tab_gen:
                     + "-".join(str(s) for s in row["stars"])
                 )
                 st.code(line_str)
+
+        # 3) Botón para guardar este bloque en el CSV de combinaciones generadas
+        if st.button("💾 Guardar este bloque"):
+            added = save_block(
+                block,
+                mode=meta.get("mode", "Estándar"),
+                note="",
+            )
+            st.success(
+                f"Se han guardado {added} combinaciones en "
+                "`data/combinaciones_generadas.csv`"
+            )
+    else:
+        st.info("Genera un bloque para poder verlo y decidir si lo guardas.")
