@@ -20,6 +20,8 @@ from app.metrics import (
 from app.updater import update_historico_from_api
 from app.generator import generate_block
 from app.combinations_store import save_block
+from app.generator import generate_block, SUM_RANGE_BY_SERIE
+from app.combinations_store import save_block, load_last_n
 
 
 st.set_page_config(page_title="El dado de Schrödinger", layout="wide")
@@ -28,6 +30,9 @@ inject_neobrutalist_theme()
 if "last_block" not in st.session_state:
     st.session_state["last_block"] = None
     st.session_state["last_block_meta"] = {}
+
+if "last_manual" not in st.session_state:
+    st.session_state["last_manual"] = None
 
 @st.cache_data
 def get_data() -> pd.DataFrame:
@@ -72,7 +77,9 @@ df = get_data()
 
 st.title("El dado de Schrödinger – Panel Euromillones")
 
-tab_hist, tab_gen = st.tabs(["📊 Explorador histórico", "🎲 Generador A/B/C"])
+tab_hist, tab_gen, tab_check = st.tabs(
+    ["📊 Explorador histórico", "🎲 Generador A/B/C", "✅ Comprobar resultados"]
+)
 
 # -------------------------------------------------------------------
 # 📊 TAB: EXPLORADOR HISTÓRICO
@@ -447,20 +454,32 @@ with tab_hist:
             else:
                 st.write("No hay datos suficientes.")
 
-            # Curiosidades combinaciones repetidas
+           # Curiosidades combinaciones repetidas (usando TODO el histórico)
             st.markdown(
                 '<div class="neocard neocard--accent5">'
                 '<p class="neocard-title">Curiosidades (combinaciones repetidas)</p>'
                 "</div>",
                 unsafe_allow_html=True,
             )
-            rep_df = compute_repeated_combinations(df_filtered)
+
+            # Para el resumen usamos el histórico completo df
+            rep_df = compute_repeated_combinations(df)
+
+            # (opcional) mostrar cuántas detecta para depurar
+            st.caption(f"Combinaciones repetidas detectadas en el histórico: {len(rep_df)}")
+
             if rep_df.empty:
-                st.write("No hay combinaciones repetidas en el rango seleccionado.")
+                st.write("No hay combinaciones repetidas en el histórico cargado.")
             else:
+                # Nos aseguramos de que está ordenado por count descendente
+                if "count" in rep_df.columns:
+                    rep_df = rep_df.sort_values("count", ascending=False)
+
                 max_rep = int(rep_df["count"].max())
                 top_examples = rep_df.head(3)
+
                 st.write(f"🏆 Máx repeticiones de una combinación: **{max_rep}** veces")
+
                 for _, row in top_examples.iterrows():
                     nums = "-".join(str(int(row[f"n{i}"])) for i in range(1, 6))
                     estrellas = f"{int(row['s1'])}-{int(row['s2'])}"
@@ -468,6 +487,27 @@ with tab_hist:
                         f"- Números: **{nums}** | Estrellas: **{estrellas}** "
                         f"→ {int(row['count'])} veces"
                     )
+
+                # (muy útil para comprobar a ojo)
+                st.markdown("##### Top 10 combinaciones repetidas")
+                st.dataframe(rep_df.head(10))
+
+                # Quintetos de números repetidos (ignorando estrellas)
+                rep_nums = (
+                    df.groupby(["n1", "n2", "n3", "n4", "n5"])
+                    .size()
+                    .reset_index(name="count")
+                )
+                rep_nums = rep_nums[rep_nums["count"] > 1].sort_values("count", ascending=False)
+
+                if rep_nums.empty:
+                    st.write("No hay quintetos de números repetidos en el histórico.")
+                else:
+                    top = rep_nums.head(3)
+                    st.write(f"🔁 Quintetos de números repetidos (ignorando estrellas):")
+                    for _, row in top.iterrows():
+                        nums = "-".join(str(int(row[f"n{i}"])) for i in range(1, 6))
+                        st.write(f"- **{nums}** → {int(row['count'])} apariciones")
 
             # Curiosidades sumas de los 5 números
             st.markdown(
@@ -666,9 +706,6 @@ with tab_hist:
         st.dataframe(df_sorted.tail(20))
 
 
-# -------------------------------------------------------------------
-# 🎲 TAB: GENERADOR A/B/C
-# -------------------------------------------------------------------
 with tab_gen:
     # Barra título Generador
     st.markdown(
@@ -713,12 +750,22 @@ with tab_gen:
 
     st.write(f"**Líneas Serie C (automático):** {lines_C}")
     st.caption(
-        "Estándar aplica anti-clon con todo el histórico y usa rangos de suma A/B/C. "
-        "Momentum / Rareza / Experimental usarán pesos distintos sobre el histórico reciente."
+        "Estándar aplica anti-clon con todo el histórico y rangos de suma A/B/C. "
+        "Momentum / Rareza / Experimental usarán pesos distintos sobre el histórico reciente. "
+        "También puedes analizar una combinación manualmente."
     )
 
-    # 1) Generar bloque y guardarlo en memoria
-    if st.button("🎲 Generar bloque de combinaciones"):
+    # --- Fila de botones: generar bloque / analizar manual ---
+    btn_col1, btn_col2 = st.columns(2)
+    with btn_col1:
+        gen_clicked = st.button("🎲 Generar bloque de combinaciones")
+    with btn_col2:
+        manual_clicked = st.button("✍️ Analizar combinación manual")
+
+    # =========================================================
+    # 1) GENERADOR AUTOMÁTICO (bloque A/B/C)
+    # =========================================================
+    if gen_clicked:
         block = generate_block(
             mode=mode,
             df_hist=df,
@@ -735,7 +782,6 @@ with tab_gen:
             "lines_C": lines_C,
         }
 
-    # 2) Recuperar el último bloque generado (si existe)
     block = st.session_state.get("last_block")
     meta = st.session_state.get("last_block_meta", {})
 
@@ -748,7 +794,6 @@ with tab_gen:
             f"C: **{meta.get('lines_C', 0)}**"
         )
 
-        # Mostrar líneas agrupadas por serie
         for serie in ["A", "B", "C"]:
             subset = [row for row in block if row["serie"] == serie]
             if not subset:
@@ -763,7 +808,6 @@ with tab_gen:
                 )
                 st.code(line_str)
 
-        # 3) Botón para guardar este bloque en el CSV de combinaciones generadas
         if st.button("💾 Guardar este bloque"):
             added = save_block(
                 block,
@@ -776,3 +820,357 @@ with tab_gen:
             )
     else:
         st.info("Genera un bloque para poder verlo y decidir si lo guardas.")
+
+        # =========================================================
+    # 2) COMBINACIÓN MANUAL
+    # =========================================================
+    st.markdown("### Combinación manual")
+
+    # Inputs para 5 números y 2 estrellas
+    num_cols = st.columns(5)
+    manual_nums = []
+    for i, col in enumerate(num_cols, start=1):
+        with col:
+            n_val = st.number_input(
+                f"N{i}",
+                min_value=1,
+                max_value=50,
+                value=i,
+                step=1,
+                key=f"manual_n{i}",
+            )
+            manual_nums.append(int(n_val))
+
+    star_cols = st.columns(2)
+    manual_stars = []
+    for i, col in enumerate(star_cols, start=1):
+        with col:
+            s_val = st.number_input(
+                f"E{i}",
+                min_value=1,
+                max_value=12,
+                value=i,
+                step=1,
+                key=f"manual_s{i}",
+            )
+            manual_stars.append(int(s_val))
+
+    if manual_clicked:
+        nums = sorted(manual_nums)
+        stars = sorted(manual_stars)
+
+        # Reiniciamos por si la combinación es inválida
+        st.session_state["last_manual"] = None
+
+        # Validaciones básicas
+        if len(set(nums)) != 5:
+            st.error("Los 5 números deben ser **distintos**.")
+        elif len(set(stars)) != 2:
+            st.error("Las 2 estrellas deben ser **distintas**.")
+        else:
+            # Clasificación por suma -> Serie A/B/C
+            suma = sum(nums)
+            serie_teorica = None
+            rango_texto = ""
+            for serie, (s_min, s_max) in SUM_RANGE_BY_SERIE.items():
+                if s_min <= suma <= s_max:
+                    serie_teorica = serie
+                    rango_texto = f"[{s_min}–{s_max}]"
+                    break
+
+            if serie_teorica is None:
+                st.warning(
+                    f"📏 Suma de los 5 números: **{suma}** → "
+                    "fuera de los rangos A/B/C (100–158)."
+                )
+            else:
+                st.success(
+                    f"📏 Suma de los 5 números: **{suma}** → "
+                    f"caería en **Serie {serie_teorica}** {rango_texto}."
+                )
+
+            # Comprobación contra histórico
+            mask_nums = (
+                (df["n1"] == nums[0])
+                & (df["n2"] == nums[1])
+                & (df["n3"] == nums[2])
+                & (df["n4"] == nums[3])
+                & (df["n5"] == nums[4])
+            )
+            mask_full = (
+                mask_nums
+                & (df["s1"] == stars[0])
+                & (df["s2"] == stars[1])
+            )
+
+            df_full = df[mask_full]
+            df_nums = df[mask_nums]
+
+            if not df_full.empty:
+                # Combinación completa 5+2 ya salió
+                fechas = df_full["date"].dt.strftime("%d/%m/%Y").tolist()
+                st.error(
+                    "⚠️ Esta combinación **completa** (5 números + 2 estrellas) "
+                    "ya ha salido en el histórico."
+                )
+                st.write("Fechas:")
+                for f in fechas:
+                    st.write(f"-", f)
+            elif not df_nums.empty:
+                # Quinteto ya visto con otras estrellas
+                fechas = df_nums["date"].dt.strftime("%d/%m/%Y").tolist()
+                st.warning(
+                    "🔁 Estos **5 números** ya han salido en el histórico "
+                    "(con otras estrellas)."
+                )
+                st.write("Fechas:")
+                for f in fechas:
+                    st.write(f"-", f)
+            else:
+                st.success(
+                    "✅ Quinteto de números y pareja de estrellas **inéditos** "
+                    "en el histórico cargado."
+                )
+
+            # Guardamos la última combinación manual válida en sesión
+            st.session_state["last_manual"] = {
+                "nums": nums,
+                "stars": stars,
+                "serie": serie_teorica,  # puede ser None si está fuera de rango
+                "sum": suma,
+            }
+
+    # Botón para guardar la última combinación manual válida
+    manual_data = st.session_state.get("last_manual")
+    if manual_data:
+        if st.button("💾 Guardar combinación manual"):
+            serie_guardada = manual_data["serie"] or "M"  # "M" si está fuera de A/B/C
+            block_manual = [
+                {
+                    "serie": serie_guardada,
+                    "nums": manual_data["nums"],
+                    "stars": manual_data["stars"],
+                }
+            ]
+            added = save_block(
+                block_manual,
+                mode="Manual",
+                note=f"Introducida a mano; suma={manual_data['sum']}",
+            )
+            st.success(
+                f"Combinación manual guardada en "
+                "`data/combinaciones_generadas.csv` "
+                f"(serie={serie_guardada}, suma={manual_data['sum']})."
+            )
+    else:
+        st.caption("Introduce una combinación y pulsa “Analizar combinación manual” para poder guardarla.")
+
+        # -------------------------------------------------------------------
+# ✅ TAB: COMPROBAR RESULTADOS
+# -------------------------------------------------------------------
+with tab_check:
+    st.markdown(
+        '<div class="neocard neocard--accent3">'
+        '<p class="neocard-title">Comprobar último sorteo vs. combinaciones guardadas</p>'
+        "</div>",
+        unsafe_allow_html=True,
+    )
+
+    if df.empty or "date" not in df.columns:
+        st.error("No se pudieron cargar los datos históricos.")
+    else:
+        # Último sorteo del histórico
+        df_sorted = df.sort_values("date")
+        last_row = df_sorted.iloc[-1]
+
+        fecha = last_row["date"].strftime("%d/%m/%Y")
+        nums_draw = [int(last_row[f"n{i}"]) for i in range(1, 6)]
+        stars_draw = [int(last_row[f"s{i}"]) for i in range(1, 3)]
+
+        st.markdown("### Último sorteo disponible")
+        st.write(f"📅 Fecha: **{fecha}**")
+        st.write(
+            "🎟️ Combinación ganadora: "
+            f"**{'-'.join(map(str, nums_draw))}** | "
+            f"Estrellas: **{'-'.join(map(str, stars_draw))}**"
+        )
+
+        # Cargamos combinaciones generadas y guardadas
+        combos_df = load_last_n(5000)  # puedes subir/bajar este número si quieres
+
+        if combos_df.empty:
+            st.info(
+                "Todavía no hay combinaciones guardadas en "
+                "`data/combinaciones_generadas.csv`."
+            )
+        else:
+            # --- Normalizar columnas para trabajar siempre con n1..n5 y s1..s2 ---
+
+            # Caso 1: formato antiguo -> 'numbers' y 'stars' como strings "12-13-25-26-47", "3-12"
+            if "numbers" in combos_df.columns and "stars" in combos_df.columns:
+                # Separar numbers en n1..n5
+                nums_split = combos_df["numbers"].astype(str).str.split("-", expand=True)
+                # Aseguramos 5 columnas
+                if nums_split.shape[1] == 5:
+                    nums_split.columns = [f"n{i}" for i in range(1, 6)]
+                    combos_df = pd.concat([combos_df, nums_split], axis=1)
+                    combos_df[[f"n{i}" for i in range(1, 6)]] = combos_df[
+                        [f"n{i}" for i in range(1, 6)]
+                    ].astype(int)
+
+                # Separar stars en s1..s2
+                stars_split = combos_df["stars"].astype(str).str.split("-", expand=True)
+                if stars_split.shape[1] == 2:
+                    stars_split.columns = ["s1", "s2"]
+                    combos_df = pd.concat([combos_df, stars_split], axis=1)
+                    combos_df[["s1", "s2"]] = combos_df[["s1", "s2"]].astype(int)
+
+            # Caso 2: por si en el futuro ya guardamos directamente n1..n5, s1..s2
+            # (o si vienen en mayúsculas N1..N5, E1/E2)
+            rename_map = {}
+            if "N1" in combos_df.columns and "n1" not in combos_df.columns:
+                rename_map.update(
+                    {
+                        "N1": "n1",
+                        "N2": "n2",
+                        "N3": "n3",
+                        "N4": "n4",
+                        "N5": "n5",
+                    }
+                )
+            if "S1" in combos_df.columns and "s1" not in combos_df.columns:
+                rename_map.update({"S1": "s1", "S2": "s2"})
+            if "E1" in combos_df.columns and "s1" not in combos_df.columns:
+                rename_map.update({"E1": "s1", "E2": "s2"})
+
+            if rename_map:
+                combos_df = combos_df.rename(columns=rename_map)
+
+            required_cols = {"n1", "n2", "n3", "n4", "n5", "s1", "s2"}
+            if not required_cols.issubset(combos_df.columns):
+                st.error(
+                    "El archivo `combinaciones_generadas.csv` no tiene las columnas "
+                    "esperadas (n1–n5, s1–s2) ni se ha podido derivarlas de "
+                    "`numbers`/`stars`. Columnas actuales: "
+                    f"{list(combos_df.columns)}"
+                )
+            else:
+                st.markdown("### Comparación con tus combinaciones guardadas")
+
+                nums_draw_set = set(nums_draw)
+                stars_draw_set = set(stars_draw)
+
+                def compute_hits(row: pd.Series) -> pd.Series:
+                    nums_combo = {int(row[f"n{i}"]) for i in range(1, 6)}
+                    stars_combo = {int(row[f"s{i}"]) for i in range(1, 3)}
+
+                    matched_nums = sorted(nums_draw_set & nums_combo)
+                    matched_stars = sorted(stars_draw_set & stars_combo)
+
+                    return pd.Series(
+                        {
+                            "aciertos_numeros": len(matched_nums),
+                            "aciertos_estrellas": len(matched_stars),
+                            "nums_coinciden": "-".join(map(str, matched_nums))
+                            if matched_nums
+                            else "",
+                            "estrellas_coinciden": "-".join(map(str, matched_stars))
+                            if matched_stars
+                            else "",
+                        }
+                    )
+
+                combos_df = combos_df.copy()
+                hits_df = combos_df.apply(compute_hits, axis=1)
+                combos_df = pd.concat([combos_df, hits_df], axis=1)
+
+                # --- Resumen por categoría de aciertos ---
+                resumen = (
+                    combos_df.groupby(["aciertos_numeros", "aciertos_estrellas"])
+                    .size()
+                    .reset_index(name="lineas")
+                    .sort_values(
+                        ["aciertos_numeros", "aciertos_estrellas"], ascending=False
+                    )
+                )
+
+                st.markdown("#### Resumen de aciertos (números + estrellas)")
+                st.dataframe(resumen)
+
+                # --- Plenos (5+2) si los hubiera ---
+                exactos = combos_df[
+                    (combos_df["aciertos_numeros"] == 5)
+                    & (combos_df["aciertos_estrellas"] == 2)
+                ]
+
+                if exactos.empty:
+                    st.success(
+                        "✅ No hay pleno **5+2** en tus combinaciones guardadas "
+                        "para el último sorteo."
+                    )
+                else:
+                    st.error(
+                        "⚠️ ¡Hay al menos un pleno **5+2** en tus combinaciones guardadas!"
+                    )
+                    st.dataframe(
+                        exactos[
+                            [
+                                "timestamp",
+                                "mode",
+                                "serie",
+                                "n1",
+                                "n2",
+                                "n3",
+                                "n4",
+                                "n5",
+                                "s1",
+                                "s2",
+                                "aciertos_numeros",
+                                "aciertos_estrellas",
+                                "nums_coinciden",
+                                "estrellas_coinciden",
+                            ]
+                        ]
+                    )
+
+                # --- Top 20 combinaciones que aciertan algo ---
+                st.markdown(
+                    "#### Top 20 combinaciones que más se acercan al último sorteo"
+                )
+
+                mask_acierto = (combos_df["aciertos_numeros"] > 0) | (
+                    combos_df["aciertos_estrellas"] > 0
+                )
+                combos_con_acierto = combos_df[mask_acierto]
+
+                if combos_con_acierto.empty:
+                    st.info(
+                        "Ninguna combinación guardada acierta números ni estrellas "
+                        "en este sorteo."
+                    )
+                else:
+                    top_hits = combos_con_acierto.sort_values(
+                        ["aciertos_numeros", "aciertos_estrellas"],
+                        ascending=False,
+                    ).head(20)
+
+                    st.dataframe(
+                        top_hits[
+                            [
+                                "timestamp",
+                                "mode",
+                                "serie",
+                                "n1",
+                                "n2",
+                                "n3",
+                                "n4",
+                                "n5",
+                                "s1",
+                                "s2",
+                                "aciertos_numeros",
+                                "aciertos_estrellas",
+                                "nums_coinciden",
+                                "estrellas_coinciden",
+                            ]
+                        ]
+                    )
