@@ -22,7 +22,7 @@ from app.generator import generate_block
 from app.combinations_store import save_block
 from app.generator import generate_block, SUM_RANGE_BY_SERIE
 from app.combinations_store import save_block, load_last_n
-
+from app.simulator import simulate_strategy
 
 st.set_page_config(page_title="El dado de Schrödinger", layout="wide")
 inject_neobrutalist_theme()
@@ -76,8 +76,13 @@ df = get_data()
 
 st.title("El dado de Schrödinger 🎲")
 
-tab_hist, tab_gen, tab_check = st.tabs(
-    ["📊 Explorador histórico", "🎲 Generador A/B/C", "✅ Comprobar resultados"]
+tab_hist, tab_gen, tab_check, tab_sim = st.tabs(
+    [
+        "📊 Explorador histórico",
+        "🎲 Generador A/B/C",
+        "✅ Comprobar resultados",
+        "🎛 Simulador Monte Carlo",
+    ]
 )
 
 # -------------------------------------------------------------------
@@ -715,10 +720,10 @@ with tab_gen:
     )
 
     mode = st.selectbox(
-        "Modo de generación",
-        ["Estándar", "Momentum", "Rareza", "Experimental"],
-        index=0,
-    )
+            "Modo de generación",
+            ["Estándar", "Momentum", "Rareza", "Experimental", "Game Theory"],
+            index=0,
+        )
 
     total_lines = st.slider("Total de líneas del bloque", 5, 25, 15, step=5)
 
@@ -1199,3 +1204,124 @@ with tab_check:
                             ]
                         ]
                     )
+
+                    # -------------------------------------------------------------------
+# 🎛 TAB: SIMULADOR MONTE CARLO
+# -------------------------------------------------------------------
+with tab_sim:
+    st.markdown(
+        '<div class="neocard neocard--accent2">'
+        '<p class="neocard-title">Simulador Monte Carlo de estrategias</p>'
+        "</div>",
+        unsafe_allow_html=True,
+    )
+
+    st.write(
+        "Simula muchos sorteos hipotéticos para ver cómo se comporta cada modo "
+        "(Estándar, Momentum, Rareza, Experimental) a largo plazo."
+    )
+
+    col_sim1, col_sim2 = st.columns(2)
+    with col_sim1:
+        sim_mode = st.selectbox(
+            "Modo a simular",
+            ["Estándar", "Momentum", "Rareza", "Experimental", "Game Theory"],
+            index=0,
+        )
+
+        sim_total_lines = st.slider(
+            "Líneas por bloque en la simulación",
+            5,
+            25,
+            15,
+            step=5,
+        )
+
+        sim_lines_A = st.number_input(
+            "Líneas Serie A (simulación)",
+            min_value=0,
+            max_value=sim_total_lines,
+            value=5,
+            step=1,
+            format="%d",
+        )
+        max_B_sim = sim_total_lines - int(sim_lines_A)
+        sim_lines_B = st.number_input(
+            "Líneas Serie B (simulación)",
+            min_value=0,
+            max_value=max_B_sim,
+            value=min(5, max_B_sim),
+            step=1,
+            format="%d",
+        )
+
+    with col_sim2:
+        sim_n_trials = st.slider(
+            "Número de sorteos simulados (trials)",
+            100,
+            5000,
+            1000,
+            step=100,
+        )
+        st.caption(
+            "Cada trial genera un bloque A/B/C con el modo elegido y un sorteo "
+            "aleatorio nuevo. Se calcula cuántos aciertos harían tus líneas."
+        )
+
+    sim_lines_A = int(sim_lines_A)
+    sim_lines_B = int(sim_lines_B)
+    sim_lines_C = int(sim_total_lines - sim_lines_A - sim_lines_B)
+
+    st.write(
+        f"**Configuración simulada** → A: {sim_lines_A} · "
+        f"B: {sim_lines_B} · C: {sim_lines_C} (total {sim_total_lines} líneas)"
+    )
+
+    if st.button("▶️ Ejecutar simulación Monte Carlo"):
+        if sim_total_lines <= 0:
+            st.error("Debes tener al menos 1 línea en total para simular.")
+        else:
+            with st.spinner("Simulando… (puede tardar unos segundos)"):
+                summary = simulate_strategy(
+                    mode=sim_mode,
+                    df_hist=df,
+                    lines_A=sim_lines_A,
+                    lines_B=sim_lines_B,
+                    lines_C=sim_lines_C,
+                    n_trials=sim_n_trials,
+                )
+
+            if summary.empty:
+                st.warning("No se han podido generar resultados para esta configuración.")
+            else:
+                st.markdown("### Distribución de aciertos (números + estrellas)")
+                # Añadimos columna de probabilidad en %
+                summary_display = summary.copy()
+                summary_display["prob_%"] = (summary_display["prob"] * 100).round(3)
+
+                summary_display = summary_display.rename(
+                    columns={
+                        "hits_n": "aciertos_numeros",
+                        "hits_s": "aciertos_estrellas",
+                        "count": "veces",
+                    }
+                )
+
+                st.dataframe(summary_display)
+
+                st.markdown(
+                    "_Interpretación_: cada fila indica con qué frecuencia "
+                    "una línea de tu bloque tendría ese patrón de aciertos "
+                    "en los sorteos simulados."
+                )
+
+                # Gráfico simple: probabilidad por patrón
+                summary_display["patron"] = (
+                    summary_display["aciertos_numeros"].astype(str)
+                    + "+"
+
+                    + summary_display["aciertos_estrellas"].astype(str)
+                )
+
+                chart_data = summary_display[["patron", "prob_%"]].set_index("patron")
+                st.bar_chart(chart_data)
