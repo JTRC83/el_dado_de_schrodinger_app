@@ -42,8 +42,8 @@ body {
 .neocard--accent6 { background-color: var(--accent-6); }
 
 .neocard-title {
-  font-size: 1.1rem;
-  font-weight: 800;
+  font-size: 1.3rem;
+  font-weight: 850;
   margin: 0;
   text-align: left;
 }
@@ -52,6 +52,7 @@ body {
 h1, h2, h3 {
   font-weight: 900 !important;
   letter-spacing: 0.03em;
+  text-align: center;
 }
 
 /* Sidebar */
@@ -66,14 +67,25 @@ h1, h2, h3 {
   margin-bottom: 1rem;
 }
 
-/* Botones generales (contenido principal) */
+/* Botones base */
 .stButton>button {
   border-radius: 999px;
   border: 3px solid #111111;
   box-shadow: 4px 4px 0 #111111;
   font-weight: 700;
-  background-color: #ffffff;
-  color: #111111;
+  cursor: pointer;
+}
+
+/* Botón primario (Generar bloque) → verde neón suave */
+.stButton > button[kind="primary"] {
+  background-color: var(--accent-6) !important;  /* #9cf594 */
+  color: #111111 !important;
+}
+
+/* Botón secundario (Analizar manual) → naranja neobrutalista */
+.stButton > button[kind="secondary"] {
+  background-color: var(--accent-5) !important;  /* #ffb347 */
+  color: #111111 !important;
 }
 
 /* Botón de la SIDEBAR (Actualizar API) estilo "botón rojo" */

@@ -28,33 +28,60 @@ def _uniform_weights(n: int) -> np.ndarray:
     return w / w.sum()
 
 
-def _freq_to_hot_weights(freq: pd.Series, power: float = 1.5) -> np.ndarray:
-    """Más frecuencia => más peso (modo Momentum)."""
-    # Nos aseguramos de cubrir todo el rango de índices (1..max)
-    max_idx = int(freq.index.max())
-    values = freq.reindex(
-        range(1, max_idx + 1), fill_value=0
-    ).to_numpy(dtype=float)
+def _freq_to_hot_weights(
+    freq: pd.Series,
+    power: float = 1.5,
+    n_total: int | None = None,
+) -> np.ndarray:
+    """
+    Más frecuencia => más peso (modo Momentum).
+    n_total = 50 para números, 12 para estrellas.
+    """
+    if n_total is None:
+        if freq.empty:
+            raise ValueError("n_total requerido cuando freq está vacía.")
+        n_total = int(freq.index.max())
 
-    values = values + 1.0  # suavizado para evitar ceros
+    if freq.empty:
+        return _uniform_weights(n_total)
+
+    values = (
+        freq.reindex(range(1, n_total + 1), fill_value=0)
+        .astype(float)
+        .to_numpy()
+    )
+    values = values + 1.0  # suavizado
     weights = np.power(values, power)
-    weights = weights / weights.sum()
-    return weights
+    return weights / weights.sum()
 
 
-def _freq_to_cold_weights(freq: pd.Series, power: float = 1.5) -> np.ndarray:
-    """Menos frecuencia => más peso (modo Rareza)."""
-    max_idx = int(freq.index.max())
-    values = freq.reindex(
-        range(1, max_idx + 1), fill_value=0
-    ).to_numpy(dtype=float)
+def _freq_to_cold_weights(
+    freq: pd.Series,
+    power: float = 1.5,
+    n_total: int | None = None,
+) -> np.ndarray:
+    """
+    Menos frecuencia => más peso (modo Rareza).
+    n_total = 50 para números, 12 para estrellas.
+    """
+    if n_total is None:
+        if freq.empty:
+            raise ValueError("n_total requerido cuando freq está vacía.")
+        n_total = int(freq.index.max())
 
+    if freq.empty:
+        return _uniform_weights(n_total)
+
+    values = (
+        freq.reindex(range(1, n_total + 1), fill_value=0)
+        .astype(float)
+        .to_numpy()
+    )
     values = values + 1.0
     max_v = values.max()
     inv = (max_v - values) + 1.0
     weights = np.power(inv, power)
-    weights = weights / weights.sum()
-    return weights
+    return weights / weights.sum()
 
 
 # ---------- anti-clon: combinaciones ya usadas ----------
@@ -188,7 +215,7 @@ def _sample_line(
 def _build_weights_for_mode(
     mode: str,
     df_hist: pd.DataFrame,
-    recent_window: int = 200,  # ya no lo usamos, pero lo dejamos por compatibilidad
+    recent_window: int = 200,  # ya no se usa, pero lo dejamos por compatibilidad
 ) -> Tuple[np.ndarray, np.ndarray]:
     """
     Devuelve (weights_main, weights_stars) según el modo.
@@ -200,9 +227,7 @@ def _build_weights_for_mode(
     mode_name = mode.split()[0]  # "Estándar", "Momentum", "Rareza", "Experimental"
 
     # --- Frecuencias base ---
-
     if df_hist.empty:
-        # Fallback: pesos uniformes si no hay datos
         freq_main_all = pd.Series([0] * 50, index=range(1, 51))
         freq_stars_all = pd.Series([0] * 12, index=range(1, 13))
     else:
@@ -213,45 +238,41 @@ def _build_weights_for_mode(
         if "date" in df_hist.columns:
             df_stars_base = df_hist[df_hist["date"] >= ERA_12_STARS_START]
             if df_stars_base.empty:
-                # por si acaso, usamos todo el histórico como backup
                 df_stars_base = df_hist
         else:
             df_stars_base = df_hist
 
         freq_stars_all = compute_star_freq(df_stars_base)
 
-        # Aseguramos que no estén vacías
         if freq_main_all.empty:
             freq_main_all = pd.Series([0] * 50, index=range(1, 51))
         if freq_stars_all.empty:
             freq_stars_all = pd.Series([0] * 12, index=range(1, 13))
 
     # --- Pesos según modo ---
-
     if mode_name == "Estándar":
-        # Uniforme, el “cerebro” lo ponen los filtros (anti-clon + sumas)
         w_main = _uniform_weights(50)
         w_stars = _uniform_weights(12)
 
     elif mode_name == "Momentum":
         # Más frecuencia histórica => más peso
-        w_main = _freq_to_hot_weights(freq_main_all)
-        w_stars = _freq_to_hot_weights(freq_stars_all)
+        w_main = _freq_to_hot_weights(freq_main_all, n_total=50)
+        w_stars = _freq_to_hot_weights(freq_stars_all, n_total=12)
 
     elif mode_name == "Rareza":
         # Menos frecuencia histórica => más peso
-        w_main = _freq_to_cold_weights(freq_main_all)
-        w_stars = _freq_to_cold_weights(freq_stars_all)
+        w_main = _freq_to_cold_weights(freq_main_all, n_total=50)
+        w_stars = _freq_to_cold_weights(freq_stars_all, n_total=12)
 
     elif mode_name == "Experimental":
         # Mezcla 50% caliente + 50% frío
-        w_hot_main = _freq_to_hot_weights(freq_main_all)
-        w_cold_main = _freq_to_cold_weights(freq_main_all)
+        w_hot_main = _freq_to_hot_weights(freq_main_all, n_total=50)
+        w_cold_main = _freq_to_cold_weights(freq_main_all, n_total=50)
         w_main = 0.5 * w_hot_main + 0.5 * w_cold_main
         w_main = w_main / w_main.sum()
 
-        w_hot_stars = _freq_to_hot_weights(freq_stars_all)
-        w_cold_stars = _freq_to_cold_weights(freq_stars_all)
+        w_hot_stars = _freq_to_hot_weights(freq_stars_all, n_total=12)
+        w_cold_stars = _freq_to_cold_weights(freq_stars_all, n_total=12)
         w_stars = 0.5 * w_hot_stars + 0.5 * w_cold_stars
         w_stars = w_stars / w_stars.sum()
 
@@ -261,7 +282,6 @@ def _build_weights_for_mode(
         w_stars = _uniform_weights(12)
 
     return w_main, w_stars
-
 
 # ---------- interfaz pública ----------
 

@@ -44,7 +44,6 @@ CAT_IMAGE_PATH = "assets/gato_dado.png"
 st.sidebar.image(CAT_IMAGE_PATH, use_container_width=True)
 
 st.sidebar.title("El dado de Schrödinger")
-st.sidebar.caption("Panel Euromillones")
 
 cooldown_seconds = 60  # por ejemplo, 1 minuto
 
@@ -75,7 +74,7 @@ if st.sidebar.button("♻️  Actualizar histórico (API)"):
 
 df = get_data()
 
-st.title("El dado de Schrödinger – Panel Euromillones")
+st.title("El dado de Schrödinger 🎲")
 
 tab_hist, tab_gen, tab_check = st.tabs(
     ["📊 Explorador histórico", "🎲 Generador A/B/C", "✅ Comprobar resultados"]
@@ -159,7 +158,7 @@ with tab_hist:
         with col_left:
             # Frecuencia números
             st.markdown(
-                '<div class="neocard">'
+                '<div class="neocard neocard--accent5">'
                 '<p class="neocard-title">Frecuencia de números (1–50)</p>'
                 "</div>",
                 unsafe_allow_html=True,
@@ -236,7 +235,7 @@ with tab_hist:
 
             # Frecuencia estrellas (era 12)
             st.markdown(
-                '<div class="neocard">'
+                '<div class="neocard neocard--accent5">'
                 '<p class="neocard-title">Frecuencia de estrellas (1–12)</p>'
                 "</div>",
                 unsafe_allow_html=True,
@@ -353,7 +352,7 @@ with tab_hist:
 
                             # Momentum extendido (Top 5 calientes / fríos)
             st.markdown(
-                '<div class="neocard">'
+                '<div class="neocard neocard--accent4">'
                 '<p class="neocard-title">Momentum extendido (Top 5 calientes / fríos)</p>'
                 '</div>',
                 unsafe_allow_html=True,
@@ -385,7 +384,7 @@ with tab_hist:
                 else:
                     top_hot = pd.Series(dtype=int)
 
-                # Números "fríos" por gap de sorteos sin salir en TODO el rango
+                # Números "fríos" por gap de sorteos sin salir en el rango
                 nums_all = (
                     df_sorted_all[["n1", "n2", "n3", "n4", "n5"]]
                     .apply(pd.to_numeric, errors="coerce")
@@ -433,7 +432,7 @@ with tab_hist:
 
             # Curiosidades estrellas
             st.markdown(
-                '<div class="neocard neocard--accent4">'
+                '<div class="neocard neocard--accent3">'
                 '<p class="neocard-title">Curiosidades (estrellas)</p>'
                 "</div>",
                 unsafe_allow_html=True,
@@ -456,7 +455,7 @@ with tab_hist:
 
            # Curiosidades combinaciones repetidas (usando TODO el histórico)
             st.markdown(
-                '<div class="neocard neocard--accent5">'
+                '<div class="neocard neocard--accent3">'
                 '<p class="neocard-title">Curiosidades (combinaciones repetidas)</p>'
                 "</div>",
                 unsafe_allow_html=True,
@@ -511,7 +510,7 @@ with tab_hist:
 
             # Curiosidades sumas de los 5 números
             st.markdown(
-                '<div class="neocard neocard--accent6">'
+                '<div class="neocard neocard--accent3">'
                 '<p class="neocard-title">Curiosidades (sumas de los 5 números)</p>'
                 "</div>",
                 unsafe_allow_html=True,
@@ -550,7 +549,7 @@ with tab_hist:
 
         # --- Patrones de estructura (decenas, fechas, consecutivos) ---
         st.markdown(
-            '<div class="neocard">'
+            '<div class="neocard neocard--accent4">'
             '<p class="neocard-title">'
             'Patrones de estructura (decenas, fechas, consecutivos)'
             '</p></div>',
@@ -646,7 +645,7 @@ with tab_hist:
 
                             # --- Top parejas de números (coocurrencias) ---
         st.markdown(
-            '<div class="neocard">'
+            '<div class="neocard neocard--accent6">'
             '<p class="neocard-title">Top parejas de números (coocurrencias)</p>'
             '</div>',
             unsafe_allow_html=True,
@@ -696,7 +695,7 @@ with tab_hist:
 
         # --- Vista rápida del histórico (últimos 20) ---
         st.markdown(
-            '<div class="neocard">'
+            '<div class="neocard neocard--accent2">'
             '<p class="neocard-title">'
             'Vista del histórico (últimos 20 registros en rango)'
             '</p></div>',
@@ -717,7 +716,7 @@ with tab_gen:
 
     mode = st.selectbox(
         "Modo de generación",
-        ["Estándar", "Momentum (futuro)", "Rareza (futuro)", "Experimental (futuro)"],
+        ["Estándar", "Momentum", "Rareza", "Experimental"],
         index=0,
     )
 
@@ -751,21 +750,32 @@ with tab_gen:
     st.write(f"**Líneas Serie C (automático):** {lines_C}")
     st.caption(
         "Estándar aplica anti-clon con todo el histórico y rangos de suma A/B/C. "
-        "Momentum / Rareza / Experimental usarán pesos distintos sobre el histórico reciente. "
-        "También puedes analizar una combinación manualmente."
+        "Momentum favorece números/estrellas más frecuentes en el histórico. "
+        "Rareza prioriza los menos frecuentes. Experimental mezcla ambos."
     )
 
     # --- Fila de botones: generar bloque / analizar manual ---
-    btn_col1, btn_col2 = st.columns(2)
-    with btn_col1:
-        gen_clicked = st.button("🎲 Generar bloque de combinaciones")
-    with btn_col2:
-        manual_clicked = st.button("✍️ Analizar combinación manual")
+    # --- BOTONES DEL GENERADOR ---
+    st.write("")  # pequeño espacio
 
-    # =========================================================
-    # 1) GENERADOR AUTOMÁTICO (bloque A/B/C)
-    # =========================================================
-    if gen_clicked:
+    col_btn1, col_btn2 = st.columns(2)
+
+    with col_btn1:
+        btn_generate = st.button(
+            "🎲 Generar bloque de combinaciones",
+            type="primary",
+            key="btn_generate_block",
+        )
+
+    with col_btn2:
+        btn_manual = st.button(
+            "🧮 Analizar combinación manual",
+            type="secondary",
+            key="btn_manual_check",
+        )
+
+    # Lógica del botón GENERAR
+    if btn_generate:
         block = generate_block(
             mode=mode,
             df_hist=df,
@@ -773,14 +783,29 @@ with tab_gen:
             lines_B=lines_B,
             lines_C=lines_C,
         )
-        st.session_state["last_block"] = block
-        st.session_state["last_block_meta"] = {
-            "mode": mode,
-            "total_lines": total_lines,
-            "lines_A": lines_A,
-            "lines_B": lines_B,
-            "lines_C": lines_C,
-        }
+        st.session_state["last_block"] = block  # si ya lo usas para guardar/guardar csv
+
+        for serie in ["A", "B", "C"]:
+            subset = [row for row in block if row["serie"] == serie]
+            if not subset:
+                continue
+            st.markdown(f"### Serie {serie}")
+            for row in subset:
+                line_str = (
+                    "Números: "
+                    + "-".join(str(n) for n in row["nums"])
+                    + " | Estrellas: "
+                    + "-".join(str(s) for s in row["stars"])
+                )
+                st.code(line_str)
+
+    # Lógica del botón ANALIZAR MANUAL
+    if btn_manual:
+        st.session_state["show_manual_checker"] = True
+
+    # =========================================================
+    # 1) GENERADOR AUTOMÁTICO (bloque A/B/C)
+    # =========================================================
 
     block = st.session_state.get("last_block")
     meta = st.session_state.get("last_block_meta", {})
@@ -855,7 +880,7 @@ with tab_gen:
             )
             manual_stars.append(int(s_val))
 
-    if manual_clicked:
+    if btn_manual:
         nums = sorted(manual_nums)
         stars = sorted(manual_stars)
 
