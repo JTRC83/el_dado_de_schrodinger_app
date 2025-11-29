@@ -995,7 +995,7 @@ with tab_gen:
     else:
         st.caption("Introduce una combinación y pulsa “Analizar combinación manual” para poder guardarla.")
 
-        # -------------------------------------------------------------------
+# -------------------------------------------------------------------
 # ✅ TAB: COMPROBAR RESULTADOS
 # -------------------------------------------------------------------
 with tab_check:
@@ -1205,7 +1205,7 @@ with tab_check:
                         ]
                     )
 
-                    # -------------------------------------------------------------------
+# -------------------------------------------------------------------
 # 🎛 TAB: SIMULADOR MONTE CARLO
 # -------------------------------------------------------------------
 with tab_sim:
@@ -1218,7 +1218,7 @@ with tab_sim:
 
     st.write(
         "Simula muchos sorteos hipotéticos para ver cómo se comporta cada modo "
-        "(Estándar, Momentum, Rareza, Experimental) a largo plazo."
+        "(Estándar, Momentum, Rareza, Experimental, Game Theory) a largo plazo."
     )
 
     col_sim1, col_sim2 = st.columns(2)
@@ -1265,7 +1265,7 @@ with tab_sim:
         )
         st.caption(
             "Cada trial genera un bloque A/B/C con el modo elegido y un sorteo "
-            "aleatorio nuevo. Se calcula cuántos aciertos harían tus líneas."
+            "real aleatorio como referencia. Se calcula cuántos aciertos harían tus líneas."
         )
 
     sim_lines_A = int(sim_lines_A)
@@ -1277,51 +1277,128 @@ with tab_sim:
         f"B: {sim_lines_B} · C: {sim_lines_C} (total {sim_total_lines} líneas)"
     )
 
-    if st.button("▶️ Ejecutar simulación Monte Carlo"):
+    # ---- EJECUTAR SIMULACIÓN Y GUARDAR RESULTADO EN SESSION_STATE ----
+    if st.button("⚙️ Ejecutar simulación Monte Carlo"):
         if sim_total_lines <= 0:
             st.error("Debes tener al menos 1 línea en total para simular.")
         else:
             with st.spinner("Simulando… (puede tardar unos segundos)"):
-                summary = simulate_strategy(
+                dist_df, summary = simulate_strategy(
                     mode=sim_mode,
                     df_hist=df,
+                    n_trials=sim_n_trials,
                     lines_A=sim_lines_A,
                     lines_B=sim_lines_B,
                     lines_C=sim_lines_C,
-                    n_trials=sim_n_trials,
                 )
 
-            if summary.empty:
-                st.warning("No se han podido generar resultados para esta configuración.")
-            else:
-                st.markdown("### Distribución de aciertos (números + estrellas)")
-                # Añadimos columna de probabilidad en %
-                summary_display = summary.copy()
-                summary_display["prob_%"] = (summary_display["prob"] * 100).round(3)
+            st.session_state["sim_result"] = {
+                "mode": sim_mode,
+                "dist": dist_df,
+                "summary": summary,
+                "lines_A": sim_lines_A,
+                "lines_B": sim_lines_B,
+                "lines_C": sim_lines_C,
+                "n_trials": sim_n_trials,
+            }
 
-                summary_display = summary_display.rename(
-                    columns={
-                        "hits_n": "aciertos_numeros",
-                        "hits_s": "aciertos_estrellas",
-                        "count": "veces",
+    # ---- MOSTRAR RESULTADOS SI HAY ALGO EN SESSION_STATE ----
+    sim_state = st.session_state.get("sim_result")
+
+    if sim_state:
+        mode_used = sim_state["mode"]
+        dist_df = sim_state["dist"]
+        summary = sim_state["summary"]
+        sim_lines_A = sim_state["lines_A"]
+        sim_lines_B = sim_state["lines_B"]
+        sim_lines_C = sim_state["lines_C"]
+        sim_n_trials = sim_state["n_trials"]
+
+        st.markdown(f"### Distribución de aciertos – modo **{mode_used}**")
+
+        if dist_df.empty:
+            st.warning("La simulación no devolvió resultados (dist vacía).")
+        else:
+            st.dataframe(
+                dist_df,
+                hide_index=True,
+                use_container_width=True,
+            )
+
+            # Gráfico: número de veces por patrón X+Y
+            dist_plot = dist_df.copy()
+            dist_plot["patron"] = (
+                dist_plot["aciertos_numeros"].astype(str)
+                + "+"
+                + dist_plot["aciertos_estrellas"].astype(str)
+            )
+            st.bar_chart(
+                dist_plot.set_index("patron")["veces"],
+                use_container_width=True,
+            )
+
+        # ---- RESUMEN DEL MODO ACTUAL ----
+        st.markdown("#### Resumen del modo simulado")
+
+        resumen_df = pd.DataFrame(
+            [
+                {
+                    "modo": mode_used,
+                    "líneas simuladas": summary.get("total_lines", 0),
+                    "P(≥3 números) %": round(summary.get("p_ge3_nums", 0.0) * 100, 3),
+                    "P(al menos un premio) %": round(
+                        summary.get("p_any_prize", 0.0) * 100, 3
+                    ),
+                }
+            ]
+        )
+        st.dataframe(resumen_df, hide_index=True, use_container_width=True)
+
+        # ---- COMPARACIÓN ENTRE MODOS ----
+        st.markdown("### Comparación rápida entre modos")
+        compare_all = st.checkbox(
+            "Calcular también Estándar, Momentum, Rareza, Experimental y Game Theory",
+            value=True,
+        )
+
+        if compare_all:
+            modes_to_compare = [
+                "Estándar",
+                "Momentum",
+                "Rareza",
+                "Experimental",
+                "Game Theory",
+            ]
+
+            rows = []
+            for m in modes_to_compare:
+                dist_m, summary_m = simulate_strategy(
+                    mode=m,
+                    df_hist=df,
+                    n_trials=sim_n_trials,
+                    lines_A=sim_lines_A,
+                    lines_B=sim_lines_B,
+                    lines_C=sim_lines_C,
+                )
+                rows.append(
+                    {
+                        "modo": m,
+                        "líneas simuladas": summary_m.get("total_lines", 0),
+                        "P(≥3 números) %": round(summary_m.get("p_ge3_nums", 0.0) * 100, 3),
+                        "P(al menos un premio) %": round(
+                            summary_m.get("p_any_prize", 0.0) * 100, 3
+                        ),
                     }
                 )
 
-                st.dataframe(summary_display)
+            comp_df = pd.DataFrame(rows)
+            st.dataframe(comp_df, hide_index=True, use_container_width=True)
 
-                st.markdown(
-                    "_Interpretación_: cada fila indica con qué frecuencia "
-                    "una línea de tu bloque tendría ese patrón de aciertos "
-                    "en los sorteos simulados."
-                )
-
-                # Gráfico simple: probabilidad por patrón
-                summary_display["patron"] = (
-                    summary_display["aciertos_numeros"].astype(str)
-                    + "+"
-
-                    + summary_display["aciertos_estrellas"].astype(str)
-                )
-
-                chart_data = summary_display[["patron", "prob_%"]].set_index("patron")
-                st.bar_chart(chart_data)
+            st.caption(
+                "Interpretación: cuanto mayor sea `P(≥3 números)` y, sobre todo, "
+                "`P(al menos un premio)`, mejor se comporta la estrategia en estas "
+                f"{sim_n_trials} simulaciones con bloques de "
+                f"{sim_lines_A}+{sim_lines_B}+{sim_lines_C} líneas."
+            )
+    else:
+        st.info("Lanza una simulación para ver la distribución de aciertos y la comparación entre modos.")

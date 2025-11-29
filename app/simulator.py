@@ -1,45 +1,86 @@
 # app/simulator.py
 from __future__ import annotations
 
-from typing import Dict, Any
+from typing import Tuple, Dict, Any
 import numpy as np
 import pandas as pd
 
 from app.generator import generate_block
 
+# Patrones que en Euromillones dan premio (aprox)
+PRIZE_PATTERNS = {
+    (5, 2), (5, 1), (5, 0),
+    (4, 2), (4, 1), (4, 0),
+    (3, 2), (3, 1), (3, 0),
+    (2, 2), (2, 1),
+    (1, 2),
+}
+
+
+def _summary_from_dist(dist: pd.DataFrame) -> Dict[str, Any]:
+    """A partir de la distribución de aciertos calcula métricas agregadas."""
+    if dist.empty:
+        return {
+            "total_lines": 0,
+            "p_ge3_nums": 0.0,
+            "p_any_prize": 0.0,
+        }
+
+    total = float(dist["veces"].sum())
+
+    # P(≥ 3 números), independientemente de estrellas
+    mask_ge3 = dist["aciertos_numeros"] >= 3
+    p_ge3_nums = dist.loc[mask_ge3, "veces"].sum() / total
+
+    # P(al menos un premio) según tabla de patrones
+    mask_prize = dist.apply(
+        lambda r: (int(r["aciertos_numeros"]), int(r["aciertos_estrellas"])) in PRIZE_PATTERNS,
+        axis=1,
+    )
+    p_any_prize = dist.loc[mask_prize, "veces"].sum() / total
+
+    return {
+        "total_lines": int(total),
+        "p_ge3_nums": float(p_ge3_nums),
+        "p_any_prize": float(p_any_prize),
+    }
+
 
 def simulate_strategy(
     mode: str,
     df_hist: pd.DataFrame,
-    lines_A: int,
-    lines_B: int,
-    lines_C: int,
     n_trials: int = 1000,
-    seed: int | None = None,
-) -> pd.DataFrame:
+    lines_A: int = 5,
+    lines_B: int = 5,
+    lines_C: int = 5,
+) -> Tuple[pd.DataFrame, Dict[str, Any]]:
     """
-    Simula n_trials sorteos de Euromillones para un modo dado (Estándar, Momentum,
-    Rareza, Experimental), usando tu generador real (generate_block).
+    Simula muchos sorteos hipotéticos con un modo dado.
 
-    Para cada simulación:
-      - genera un bloque A/B/C con las líneas indicadas
-      - genera un sorteo "real" aleatorio (5 números, 2 estrellas)
-      - calcula aciertos (números y estrellas) de cada línea
-
-    Devuelve un DataFrame de resumen:
-      hits_n (aciertos números), hits_s (aciertos estrellas),
-      count (veces que aparece ese patrón),
-      prob (aprox. probabilidad relativa).
+    Devuelve:
+      - dist_df: distribución de (aciertos_numeros, aciertos_estrellas)
+      - summary: métricas agregadas (P(≥3 números), P(al menos premio), etc.)
     """
-    rng = np.random.default_rng(seed)
-    records: list[Dict[str, Any]] = []
+    if df_hist.empty:
+        empty = pd.DataFrame(
+            columns=["aciertos_numeros", "aciertos_estrellas", "veces", "prob", "prob_%"]
+        )
+        return empty, _summary_from_dist(empty)
 
-    total_lines_por_trial = lines_A + lines_B + lines_C
-    if total_lines_por_trial <= 0:
-        return pd.DataFrame(columns=["hits_n", "hits_s", "count", "prob"])
+    df_sorted = df_hist.sort_values("date")
+    draws = df_sorted[["n1", "n2", "n3", "n4", "n5", "s1", "s2"]].to_numpy()
+    n_draws = len(draws)
 
-    for _ in range(n_trials):
-        # 1) bloque generado por tu lógica real
+    results = []
+
+    for _ in range(int(n_trials)):
+        # Elegimos un sorteo real al azar como "oficial"
+        idx = np.random.randint(0, n_draws)
+        row = draws[idx]
+        nums_draw = set(row[:5])
+        stars_draw = set(row[5:])
+
+        # Generamos un bloque A/B/C con el modo elegido
         block = generate_block(
             mode=mode,
             df_hist=df_hist,
@@ -48,38 +89,37 @@ def simulate_strategy(
             lines_C=lines_C,
         )
 
-        # 2) sorteo aleatorio "real"
-        draw_nums = rng.choice(np.arange(1, 51), size=5, replace=False)
-        draw_stars = rng.choice(np.arange(1, 13), size=2, replace=False)
-
-        set_draw_nums = set(int(x) for x in draw_nums)
-        set_draw_stars = set(int(x) for x in draw_stars)
-
-        # 3) aciertos por línea
         for line in block:
             nums = set(line["nums"])
             stars = set(line["stars"])
-            hits_n = len(nums & set_draw_nums)
-            hits_s = len(stars & set_draw_stars)
-            records.append(
+            hits_nums = len(nums & nums_draw)
+            hits_stars = len(stars & stars_draw)
+            results.append(
                 {
-                    "hits_n": hits_n,
-                    "hits_s": hits_s,
+                    "aciertos_numeros": hits_nums,
+                    "aciertos_estrellas": hits_stars,
                 }
             )
 
-    if not records:
-        return pd.DataFrame(columns=["hits_n", "hits_s", "count", "prob"])
+    if not results:
+        empty = pd.DataFrame(
+            columns=["aciertos_numeros", "aciertos_estrellas", "veces", "prob", "prob_%"]
+        )
+        return empty, _summary_from_dist(empty)
 
-    df = pd.DataFrame(records)
-    summary = (
-        df.groupby(["hits_n", "hits_s"])
+    df_res = pd.DataFrame(results)
+
+    dist = (
+        df_res.groupby(["aciertos_numeros", "aciertos_estrellas"])
         .size()
-        .reset_index(name="count")
-        .sort_values(["hits_n", "hits_s"], ascending=[False, False])
+        .reset_index(name="veces")
+        .sort_values(["aciertos_numeros", "aciertos_estrellas"])
+        .reset_index(drop=True)
     )
 
-    total_lines_simuladas = len(df)
-    summary["prob"] = summary["count"] / total_lines_simuladas
+    total_lines = float(df_res.shape[0])
+    dist["prob"] = dist["veces"] / total_lines
+    dist["prob_%"] = dist["prob"] * 100
 
-    return summary
+    summary = _summary_from_dist(dist)
+    return dist, summary
