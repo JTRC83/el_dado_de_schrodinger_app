@@ -344,21 +344,56 @@ def generate_block(
     """
     Genera un bloque de combinaciones para las series A/B/C según el modo.
 
-    En todos los modos:
+    En Estándar / Momentum / Rareza / Experimental / Game Theory:
       - no repite quintetas de números vistas en el histórico completo
       - no repite combinaciones completas de la era de 12 estrellas
       - respeta límites de suma por serie
 
-    En "Game Theory":
-      - además penaliza combinaciones visualmente populares
-        (muchas fechas, consecutivos largos, decenas saturadas, muchos múltiplos de 5).
+    En modo "Mix estrategias":
+      - ignora lines_A/B/C
+      - genera 5 líneas por serie (A, B, C), una por cada estrategia:
+        Estándar, Momentum, Rareza, Experimental, Game Theory
     """
-    w_main, w_stars = _build_weights_for_mode(mode, df_hist)
+
     mode_name = mode.split()[0]  # "Estándar", "Momentum", "Rareza", "Experimental", "Game"
 
-    # Histórico usado para anti-clon
+    # Histórico usado para anti-clon: números = todo, estrellas = era 12
     seen_numbers, seen_full_era12 = _build_seen_combos(df_hist)
-    block_seen_full: Set[Tuple[int, ...]] = set()
+    block_seen_full: set[tuple[int, ...]] = set()
+
+    # ------------------------------
+    # MODO MIX ESTRATEGIAS
+    # ------------------------------
+    if mode.startswith("Mix"):
+        sub_modes = ["Estándar", "Momentum", "Rareza", "Experimental", "Game Theory"]
+        block: List[Dict[str, Any]] = []
+
+        for serie in ["A", "B", "C"]:
+            for sub_mode in sub_modes:
+                w_main, w_stars = _build_weights_for_mode(sub_mode, df_hist)
+                nums, stars = _sample_line(
+                    weights_main=w_main,
+                    weights_stars=w_stars,
+                    serie=serie,
+                    seen_numbers=seen_numbers,
+                    seen_full_era12=seen_full_era12,
+                    block_seen_full=block_seen_full,
+                )
+                block.append(
+                    {
+                        "serie": serie,
+                        "nums": nums,
+                        "stars": stars,
+                        "sub_mode": sub_mode,  # opcional, por si luego quieres verlo
+                    }
+                )
+
+        return block
+
+    # ------------------------------
+    # RESTO DE MODOS (comportamiento normal)
+    # ------------------------------
+    w_main, w_stars = _build_weights_for_mode(mode, df_hist)
 
     block: List[Dict[str, Any]] = []
 
@@ -371,7 +406,6 @@ def generate_block(
                 seen_numbers=seen_numbers,
                 seen_full_era12=seen_full_era12,
                 block_seen_full=block_seen_full,
-                mode_name=mode_name,
             )
             block.append(
                 {

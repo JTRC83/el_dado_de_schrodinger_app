@@ -720,10 +720,17 @@ with tab_gen:
     )
 
     mode = st.selectbox(
-            "Modo de generación",
-            ["Estándar", "Momentum", "Rareza", "Experimental", "Game Theory"],
-            index=0,
-        )
+        "Modo de generación",
+        [
+            "Estándar",
+            "Momentum",
+            "Rareza",
+            "Experimental",
+            "Game Theory",
+            "Mix estrategias",
+        ],
+        index=0,
+    )
 
     total_lines = st.slider("Total de líneas del bloque", 5, 25, 15, step=5)
 
@@ -753,16 +760,23 @@ with tab_gen:
     lines_C = int(total_lines - lines_A - lines_B)
 
     st.write(f"**Líneas Serie C (automático):** {lines_C}")
-    st.caption(
-        "Estándar aplica anti-clon con todo el histórico y rangos de suma A/B/C. "
-        "Momentum favorece números/estrellas más frecuentes en el histórico. "
-        "Rareza prioriza los menos frecuentes. Experimental mezcla ambos."
-    )
+
+    if mode == "Mix estrategias":
+        st.caption(
+            "Modo Mix: genera siempre 15 líneas (5 por serie A/B/C), "
+            "mezclando Estándar, Momentum, Rareza, Experimental y Game Theory. "
+            "El reparto A/B/C del slider se ignora."
+        )
+    else:
+        st.caption(
+            "Estándar aplica anti-clon con todo el histórico y rangos de suma A/B/C. "
+            "Momentum favorece números/estrellas más frecuentes. "
+            "Rareza prioriza los menos frecuentes. Experimental mezcla ambos. "
+            "Game Theory penaliza patrones visualmente populares."
+        )
 
     # --- Fila de botones: generar bloque / analizar manual ---
-    # --- BOTONES DEL GENERADOR ---
-    st.write("")  # pequeño espacio
-
+    st.write("")  # pequeño espacio visual
     col_btn1, col_btn2 = st.columns(2)
 
     with col_btn1:
@@ -779,7 +793,9 @@ with tab_gen:
             key="btn_manual_check",
         )
 
-    # Lógica del botón GENERAR
+    # ============================
+    # 1) GENERADOR AUTOMÁTICO
+    # ============================
     if btn_generate:
         block = generate_block(
             mode=mode,
@@ -788,30 +804,16 @@ with tab_gen:
             lines_B=lines_B,
             lines_C=lines_C,
         )
-        st.session_state["last_block"] = block  # si ya lo usas para guardar/guardar csv
+        st.session_state["last_block"] = block
+        st.session_state["last_block_meta"] = {
+            "mode": mode,
+            "total_lines": total_lines,
+            "lines_A": lines_A,
+            "lines_B": lines_B,
+            "lines_C": lines_C,
+        }
 
-        for serie in ["A", "B", "C"]:
-            subset = [row for row in block if row["serie"] == serie]
-            if not subset:
-                continue
-            st.markdown(f"### Serie {serie}")
-            for row in subset:
-                line_str = (
-                    "Números: "
-                    + "-".join(str(n) for n in row["nums"])
-                    + " | Estrellas: "
-                    + "-".join(str(s) for s in row["stars"])
-                )
-                st.code(line_str)
-
-    # Lógica del botón ANALIZAR MANUAL
-    if btn_manual:
-        st.session_state["show_manual_checker"] = True
-
-    # =========================================================
-    # 1) GENERADOR AUTOMÁTICO (bloque A/B/C)
-    # =========================================================
-
+    # Mostrar SIEMPRE la última generación (si existe)
     block = st.session_state.get("last_block")
     meta = st.session_state.get("last_block_meta", {})
 
@@ -830,11 +832,16 @@ with tab_gen:
                 continue
             st.markdown(f"#### Serie {serie}")
             for row in subset:
+                extra = ""
+                if meta.get("mode") == "Mix estrategias" and "sub_mode" in row:
+                    extra = f"  ({row['sub_mode']})"
+
                 line_str = (
                     "Números: "
                     + "-".join(str(n) for n in row["nums"])
                     + " | Estrellas: "
                     + "-".join(str(s) for s in row["stars"])
+                    + extra
                 )
                 st.code(line_str)
 
@@ -851,9 +858,12 @@ with tab_gen:
     else:
         st.info("Genera un bloque para poder verlo y decidir si lo guardas.")
 
-        # =========================================================
+    # ============================
     # 2) COMBINACIÓN MANUAL
-    # =========================================================
+    # ============================
+    if btn_manual:
+        st.session_state["show_manual_checker"] = True
+
     st.markdown("### Combinación manual")
 
     # Inputs para 5 números y 2 estrellas
