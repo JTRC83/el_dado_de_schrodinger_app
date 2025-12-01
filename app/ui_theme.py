@@ -1,7 +1,11 @@
 # app/ui_theme.py
+import base64
+from pathlib import Path
+
 import streamlit as st
 
-NEOBRUTALIST_CSS = """
+
+BASE_CSS = """
 <style>
 :root {
   --primary-bg: #fdfdfd;
@@ -42,7 +46,7 @@ body {
 .neocard--accent6 { background-color: var(--accent-6); }
 
 .neocard-title {
-  font-size: 1.3rem;
+  font-size: 1.4rem;
   font-weight: 850;
   margin: 0;
   text-align: left;
@@ -52,7 +56,6 @@ body {
 h1, h2, h3 {
   font-weight: 900 !important;
   letter-spacing: 0.03em;
-  text-align: center;
 }
 
 /* Sidebar */
@@ -77,44 +80,82 @@ h1, h2, h3 {
 }
 
 /* Botón primario (Generar bloque) → verde neón suave */
-.stButton > button[kind="primary"] {
-  background-color: var(--accent-6) !important;  /* #9cf594 */
-  color: #111111 !important;
+.stButton button[data-testid="baseButton-primary"] {
+  background-color: #9cf594;
+  color: #111111;
 }
 
 /* Botón secundario (Analizar manual) → naranja neobrutalista */
 .stButton > button[kind="secondary"] {
-  background-color: var(--accent-5) !important;  /* #ffb347 */
+  background-color: #ffb347 !important;  /* naranja combinaciones */
   color: #111111 !important;
-}
-
-/* Botón de la SIDEBAR (Actualizar API) estilo "botón rojo" */
-[data-testid="stSidebar"] .stButton > button {
-  border-radius: 999px;
-  padding: 0.8rem 1.8rem;
-  border: 4px solid #111111;
-  background: radial-gradient(circle at 30% 30%, #ff8080, #ff1f1f);
-  color: #ffffff;
-  font-weight: 800;
-  font-size: 0.95rem;
-  box-shadow: 6px 6px 0 #111111;
-  transition: transform 0.05s ease-out,
-              box-shadow 0.05s ease-out,
-              filter 0.1s ease-out;
-}
-
-[data-testid="stSidebar"] .stButton > button:hover {
-  filter: brightness(1.05);
-  transform: translateY(1px);
-  box-shadow: 4px 4px 0 #111111;
-}
-
-[data-testid="stSidebar"] .stButton > button:active {
-  transform: translateY(3px);
-  box-shadow: 2px 2px 0 #111111;
 }
 </style>
 """
 
+
+def _build_sidebar_button_css() -> str:
+    """
+    Genera el CSS para el botón de la sidebar usando la imagen
+    assets/boton_reciclar.png embebida en base64.
+    Si la imagen no existe, usa un fallback con círculo rojo.
+    """
+    btn_path = Path("assets/boton_reciclar.png")
+
+    if btn_path.exists():
+        with open(btn_path, "rb") as f:
+            b64 = base64.b64encode(f.read()).decode("ascii")
+
+        css = f"""
+<style>
+[data-testid="stSidebar"] .stButton > button {{
+  width: 140px;
+  height: 140px;
+  padding: 0;
+  border: none;
+  border-radius: 999px;
+  background-color: transparent;
+  background-image: url("data:image/png;base64,{b64}");
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: contain;
+  box-shadow: none;
+  cursor: pointer;
+  transition: transform 0.05s ease-out, filter 0.1s ease-out;
+}}
+
+[data-testid="stSidebar"] .stButton > button:hover {{
+  filter: brightness(1.05);
+  transform: translateY(1px);
+}}
+
+[data-testid="stSidebar"] .stButton > button:active {{
+  transform: translateY(3px);
+}}
+</style>
+"""
+    else:
+        # Fallback: botón rojo circular con emoji ♻️
+        css = """
+<style>
+[data-testid="stSidebar"] .stButton > button {
+  width: 140px;
+  height: 140px;
+  padding: 0;
+  border-radius: 999px;
+  border: 4px solid #111111;
+  background: radial-gradient(circle at 30% 30%, #ff8080, #ff1f1f);
+  color: #ffffff;
+  font-size: 2.2rem;
+  box-shadow: 6px 6px 0 #111111;
+}
+</style>
+"""
+    return css
+
+
 def inject_neobrutalist_theme():
-    st.markdown(NEOBRUTALIST_CSS, unsafe_allow_html=True)
+    # CSS base
+    st.markdown(BASE_CSS, unsafe_allow_html=True)
+    # CSS específico del botón de la sidebar con la imagen en base64
+    st.markdown(_build_sidebar_button_css(), unsafe_allow_html=True)

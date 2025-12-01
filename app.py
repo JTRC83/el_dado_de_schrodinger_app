@@ -48,15 +48,23 @@ st.sidebar.title("El dado de Schrödinger")
 cooldown_seconds = 60  # por ejemplo, 1 minuto
 
 last_update = st.session_state.get("last_update_attempt")
-
 if last_update is not None:
     elapsed = time.time() - last_update
 else:
     elapsed = cooldown_seconds + 1  # para permitir la primera vez
 
-if st.sidebar.button("♻️  Actualizar histórico (API)"):
+disabled = elapsed < cooldown_seconds
+
+update_clicked = st.sidebar.button(
+    " ",
+    key="btn_update_api",
+    disabled=disabled,
+)
+
+if update_clicked:
     try:
         added = update_historico_from_api()
+        st.session_state["last_update_attempt"] = time.time()
         get_data.clear()
         if added == 0:
             st.sidebar.info("Histórico ya estaba actualizado.")
@@ -71,6 +79,8 @@ if st.sidebar.button("♻️  Actualizar histórico (API)"):
             )
         else:
             st.sidebar.error(f"Error al actualizar: {e}")
+
+st.sidebar.caption("Actualizar histórico (API)")
 
 df = get_data()
 
